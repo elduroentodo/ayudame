@@ -11,7 +11,7 @@ export default function AppPage() {
           <a className="active" href="/app">▦ Resumen</a>
           <a href="#agentes">✦ Mis agentes <b>1</b></a>
           <a href="#flujos">⌘ Flujos</a>
-          <a href="#conocimiento">◫ Conocimiento</a>
+          <a href="/app/conocimiento">◫ Conocimiento</a>
           <a href="#canales">◌ Canales</a>
         </nav>
         <div className="sidebar-help"><strong>Tu espacio está listo</strong><p>Completa los tres pasos para activar tu primer agente.</p><a href="#primer-agente">Ver configuración →</a></div>
