@@ -45,7 +45,7 @@ export default function AppPage() {
 
   async function createWorkspace(event: FormEvent) {
     event.preventDefault();
-    if (!form.about.trim() && !firstPdf) { setMessage("Escribe el About del negocio o adjunta un PDF para empezar."); return; }
+    if (!form.about.trim() && !firstPdf) { setMessage("Describe tu negocio o adjunta un PDF para empezar."); return; }
     setCreating(true); setMessage("");
     const { data: createdBusiness, error } = await supabase.rpc("create_business_for_current_user", {
       business_name: form.businessName,
@@ -72,7 +72,7 @@ export default function AppPage() {
       const { error: documentError } = await supabase.from("knowledge_documents").insert({ business_id: newBusiness.id, file_name: firstPdf.name, storage_path: path, mime_type: firstPdf.type || "application/pdf", size_bytes: firstPdf.size, status: "ready" });
       if (documentError) { setMessage(documentError.message); setBusiness(newBusiness); setCreating(false); return; }
     }
-    setBusiness(newBusiness); setAgent(newAgent); setCreating(false);
+    setBusiness(newBusiness); setCreating(false);
   }
 
   async function signOut() { await supabase.auth.signOut(); window.location.assign("/"); }
