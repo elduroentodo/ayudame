@@ -7,10 +7,23 @@ export type RetrievedChunk = {
   score: number;
 };
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let client: OpenAI | undefined;
+
+function getClient() {
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    throw new Error(
+      "OPENAI_API_KEY is not configured. Add it in Vercel > Settings > Environment Variables."
+    );
+  }
+
+  client ??= new OpenAI({ apiKey });
+  return client;
+}
 
 export async function embed(text: string) {
-  const result = await client.embeddings.create({
+  const result = await getClient().embeddings.create({
     model: process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small",
     input: text,
   });
