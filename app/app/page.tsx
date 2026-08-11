@@ -8,7 +8,7 @@ type Business = { id: string; name: string; description: string | null; website:
 type Agent = { id: string; name: string; status: string };
 
 function safeSlug(value: string) {
-  return `${value.toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${Date.now().toString(36)}`;
+  return `${value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${Date.now().toString(36)}`;
 }
 
 export default function AppPage() {
