@@ -60,19 +60,17 @@ export default function AppPage() {
     });
     if (error || !createdBusiness) { setMessage(error?.message || "No pudimos crear el espacio."); setCreating(false); return; }
     const newBusiness = createdBusiness as Business;
-    const { data: newAgent, error: agentError } = await supabase.from("agents").insert({ business_id: newBusiness.id, name: `Asistente de ${newBusiness.name}`, kind: "knowledge", status: "draft" }).select("id, name, status").single();
-    if (agentError) { setMessage(agentError.message); setCreating(false); return; }
     const { data: { user } } = await supabase.auth.getUser();
     if (form.about.trim()) {
-      const { error: articleError } = await supabase.from("knowledge_articles").insert({ business_id: newBusiness.id, agent_id: newAgent.id, title: `Acerca de ${newBusiness.name}`, body: form.about.trim(), status: "published", created_by: user?.id });
+      const { error: articleError } = await supabase.from("knowledge_articles").insert({ business_id: newBusiness.id, title: `Información inicial de ${newBusiness.name}`, body: form.about.trim(), status: "published", created_by: user?.id });
       if (articleError) { setMessage(articleError.message); setCreating(false); return; }
     }
     if (firstPdf) {
       const path = `${newBusiness.id}/${Date.now()}-${firstPdf.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
       const { error: uploadError } = await supabase.storage.from("knowledge-files").upload(path, firstPdf, { upsert: false });
-      if (uploadError) { setMessage(`El espacio se creó, pero no pudimos subir el PDF: ${uploadError.message}`); setBusiness(newBusiness); setAgent(newAgent); setCreating(false); return; }
-      const { error: documentError } = await supabase.from("knowledge_documents").insert({ business_id: newBusiness.id, agent_id: newAgent.id, file_name: firstPdf.name, storage_path: path, mime_type: firstPdf.type || "application/pdf", size_bytes: firstPdf.size, status: "ready" });
-      if (documentError) { setMessage(documentError.message); setBusiness(newBusiness); setAgent(newAgent); setCreating(false); return; }
+      if (uploadError) { setMessage(`El espacio se creó, pero no pudimos subir el PDF: ${uploadError.message}`); setBusiness(newBusiness); setCreating(false); return; }
+      const { error: documentError } = await supabase.from("knowledge_documents").insert({ business_id: newBusiness.id, file_name: firstPdf.name, storage_path: path, mime_type: firstPdf.type || "application/pdf", size_bytes: firstPdf.size, status: "ready" });
+      if (documentError) { setMessage(documentError.message); setBusiness(newBusiness); setCreating(false); return; }
     }
     setBusiness(newBusiness); setAgent(newAgent); setCreating(false);
   }
