@@ -1,0 +1,4 @@
+import {generateObject} from "ai";import {z} from "zod";import {model} from "@/lib/providers";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export async function POST(req:Request){const{instruction,input,data=[],provider="openai"}=await req.json();const r=await generateObject({model:model(provider),schema:z.object({answer:z.string(),matchedRows:z.array(z.number()),needsHuman:z.boolean()}),system:`Sigue el caso de uso: ${instruction}. Usa únicamente estos datos: ${JSON.stringify(data).slice(0,50000)}`,prompt:input});return Response.json(r.object)}
