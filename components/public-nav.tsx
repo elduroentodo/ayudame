@@ -1,0 +1,2 @@
+import Link from "next/link";
+export default function PublicNav(){return <nav className="nav shell"><Link className="brand" href="/"><span className="brand-mark">a</span><span>ayúdame</span></Link><div className="nav-links"><Link href="/#como-funciona">Cómo funciona</Link><Link href="/precios">Planes</Link><Link href="/#contacto">Contacto</Link></div><Link className="button button-small button-dark" href="/login">Ingresar</Link></nav>}
