@@ -1,0 +1,8 @@
+"use client";
+import { FormEvent, useState } from "react";
+
+export default function ContactForm() {
+  const [sent,setSent]=useState(false);
+  function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();const data=new FormData(e.currentTarget);const body=["Nombre: "+data.get("name"),"Negocio: "+data.get("business"),"WhatsApp: "+data.get("phone"),"Plan de interés: "+data.get("plan"),"Mensaje: "+data.get("message")].join("\n");window.location.href="mailto:sebastian.espindola.h@gmail.com?subject="+encodeURIComponent("Lead Ayúdame — "+data.get("business"))+"&body="+encodeURIComponent(body);setSent(true);}
+  return <form className="lead-form" onSubmit={submit}><div className="lead-grid"><label>Tu nombre<input required name="name" placeholder="¿Cómo te llamas?" /></label><label>Tu negocio<input required name="business" placeholder="Nombre del negocio" /></label><label>WhatsApp<input required name="phone" placeholder="+57 300 000 0000" /></label><label>Plan que te interesa<select name="plan"><option>Quiero que me orienten</option><option>Light</option><option>Full</option></select></label></div><label>¿Qué quisieras mejorar?<textarea required name="message" placeholder="Ej. responder WhatsApp, cotizar más rápido, ordenar preguntas frecuentes…" /></label><button className="button button-dark" type="submit">Hablar con Ayúdame <span>→</span></button>{sent&&<p className="lead-note">Abrimos tu correo con el mensaje listo para enviar. Si no se abrió, escríbenos directamente.</p>}</form>;
+}
