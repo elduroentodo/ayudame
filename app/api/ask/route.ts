@@ -15,7 +15,8 @@ export async function POST(request: Request) {
   const { data: userData, error: userError } = await supabase.auth.getUser(token);
   if (userError || !userData.user) return NextResponse.json({ error: "Sesión no válida." }, { status: 401 });
 
-  const question = typeof (await request.json()).question === "string" ? (await request.clone().json().catch(() => ({}))).question?.trim() : "";
+  const body = await request.json().catch(() => ({}));
+  const question = typeof body.question === "string" ? body.question.trim() : "";
   if (!question || question.length > 1200) return NextResponse.json({ error: "Escribe una pregunta de hasta 1.200 caracteres." }, { status: 400 });
 
   const { data: membership } = await supabase.from("business_members").select("business_id").eq("user_id", userData.user.id).limit(1).maybeSingle();
