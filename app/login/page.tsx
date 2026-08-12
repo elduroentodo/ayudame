@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { supabase } from "@/lib/supabase-browser";
+import PublicNav from "@/components/public-nav";
 
 export default function LoginPage() {
   const [mode, setMode] = useState<"login" | "signup" | "recovery">("login");
@@ -48,7 +49,7 @@ export default function LoginPage() {
   const title = mode === "signup" ? "Crea tu espacio de trabajo." : mode === "recovery" ? "Recupera tu acceso." : "Entra a tu centro de control.";
 
   return (
-    <main className="auth-page">
+    <><PublicNav/><main className="auth-page">
       <section className="auth-card">
         <Link className="brand" href="/"><span className="brand-mark">a</span><span>ayúdame</span></Link>
         <p className="eyebrow">{mode === "signup" ? "Crea tu cuenta" : mode === "recovery" ? "Recupera tu cuenta" : "Bienvenido"}</p>
@@ -64,6 +65,6 @@ export default function LoginPage() {
         {mode !== "login" && <button className="auth-text-button" onClick={() => setMode("login")}>Volver a iniciar sesión</button>}
       </section>
       <aside className="auth-aside"><p className="eyebrow">Tu primer agente</p><h2>Conocimiento claro.<br /><em>Conversaciones que venden.</em></h2><div className="auth-orbit"><span>RAG</span><span>WhatsApp</span><span>Excel</span></div></aside>
-    </main>
+    </main></>
   );
 }
