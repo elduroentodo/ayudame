@@ -1,0 +1,4 @@
+"use client";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+export default function Checkout(){const plan=useSearchParams().get("plan")==="full"?"Full":"Light";const price=plan==="Full"?"$399.000":"$149.000";return <main className="checkout-page"><div className="checkout-card"><Link className="brand" href="/"><span className="brand-mark">a</span><span>ayúdame</span></Link><p className="eyebrow">Resumen de plan</p><h1>{plan}</h1><p className="checkout-price">{price} <small>COP / mes</small></p><p>La pasarela de pagos se activará con tu proveedor de pagos local. Por ahora puedes solicitar el alta y te contactaremos para finalizarla.</p><a className="button button-primary" href={"mailto:sebastian.espindola.h@gmail.com?subject="+encodeURIComponent("Quiero contratar Ayúdame "+plan)}>Solicitar este plan <span>→</span></a><Link className="text-link" href="/precios">← Volver a precios</Link></div></main>}
