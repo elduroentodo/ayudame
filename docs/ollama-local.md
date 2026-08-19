@@ -1,21 +1,26 @@
-# Ollama local para Ayúdame
+# Cloudflare Workers AI para Ayúdame
 
-Ollama permite usar un modelo abierto sin API de OpenAI mientras desarrollas. Corre en tu computador, no dentro de Vercel.
+Ayúdame usa **Cloudflare Workers AI** como proveedor predeterminado. No alojamos Ollama ni exponemos modelos en Vercel: Vercel llama al API de Cloudflare solo desde el servidor y conserva el token secreto.
 
-## Instalación local
-1. Instala Ollama desde https://ollama.com.
-2. En Terminal ejecuta: `ollama pull qwen2.5:7b`.
-3. Levanta Ayúdame localmente con `npm install` y `npm run dev`.
-4. Crea `.env.local`:
-```
-AI_PROVIDER=ollama
-OLLAMA_BASE_URL=http://127.0.0.1:11434
-OLLAMA_MODEL=qwen2.5:7b
-NEXT_PUBLIC_SUPABASE_URL=...
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
-```
+## Configuración gratuita
 
-La ruta `/api/ask` exige una sesión de Supabase, identifica el negocio en el servidor y solo usa sus artículos aprobados. No recibe nombre de negocio ni contexto desde el navegador.
+1. Crea o inicia sesión en Cloudflare.
+2. Abre **Workers AI** y elige **Use REST API**.
+3. Selecciona **Create a Workers AI API Token** y copia el token una sola vez.
+4. Copia también el **Account ID** que muestra esa misma pantalla.
+5. En Vercel > proyecto Ayúdame > Settings > Environment Variables, agrega estas variables en **Production** y **Preview**:
+   - `AI_PROVIDER=cloudflare`
+   - `CLOUDFLARE_ACCOUNT_ID=<tu Account ID>`
+   - `CLOUDFLARE_AI_TOKEN=<tu token secreto>`
+   - `CLOUDFLARE_AI_MODEL=@cf/meta/llama-3.2-3b-instruct`
+6. Haz un redeploy de Vercel.
 
-## Producción
-Vercel no puede conectar a `127.0.0.1` de tu computador. Antes de habilitar WhatsApp público se necesita alojar Ollama en un servidor con GPU/CPU o cambiar a un proveedor remoto como Groq. Nunca expongas la URL privada ni credenciales en variables `NEXT_PUBLIC_`.
+Nunca uses el prefijo `NEXT_PUBLIC_` para el token o el Account ID. El endpoint de Ayúdame exige una sesión de Supabase y resuelve el negocio/conocimiento en el servidor antes de llamar a Cloudflare.
+
+## Límites
+
+Workers AI Free incluye 10.000 Neurons al día. Cuando el límite se agota, el asistente responderá con error hasta el reinicio diario. El modelo inicial elegido es Llama 3.2 3B: económico y suficiente para respuestas breves basadas en artículos. Revisa el consumo en el panel de Workers AI.
+
+## Ollama local (opcional)
+
+Para seguir desarrollando con Ollama, usa `AI_PROVIDER=ollama` en `.env.local`, junto con `OLLAMA_BASE_URL` y `OLLAMA_MODEL`. No uses Ollama local en Vercel.
