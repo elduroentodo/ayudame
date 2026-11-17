@@ -10,24 +10,35 @@ export default function Probar() {
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     let mounted = true;
+    setReady(false);
+    setLoadError("");
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { window.location.replace("/login"); return; }
-      const { data: membership } = await supabase.from("business_members")
-        .select("business_id").eq("user_id", user.id).limit(1).maybeSingle();
-      if (!membership?.business_id) { window.location.replace("/app"); return; }
-      const { count, error } = await supabase.from("knowledge_articles")
-        .select("id", { count: "exact", head: true })
-        .eq("business_id", membership.business_id).eq("status", "published");
-      if (!mounted) return;
-      setArticleCount(error ? 0 : count || 0);
-      setReady(true);
+      try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError) throw authError;
+        if (!user) { window.location.replace("/login"); return; }
+        const { data: membership, error: membershipError } = await supabase.from("business_members")
+          .select("business_id").eq("user_id", user.id).limit(1).maybeSingle();
+        if (membershipError) throw membershipError;
+        if (!membership?.business_id) { window.location.replace("/app"); return; }
+        const { count, error } = await supabase.from("knowledge_articles")
+          .select("id", { count: "exact", head: true })
+          .eq("business_id", membership.business_id).eq("status", "published");
+        if (error) throw error;
+        if (!mounted) return;
+        setArticleCount(count || 0);
+        setReady(true);
+      } catch {
+        if (mounted) setLoadError("No pudimos cargar tu asistente. Intenta de nuevo cuando la conexión esté disponible.");
+      }
     })();
     return () => { mounted = false; };
-  }, []);
+  }, [retryKey]);
 
   async function ask(event: FormEvent) {
     event.preventDefault();
@@ -51,6 +62,7 @@ export default function Probar() {
     }
   }
 
+  if (loadError) return <main className="auth-page"><section className="auth-card"><p className="eyebrow">Prueba tu asistente</p><h1>No pudimos cargarlo</h1><p className="auth-copy">{loadError}</p><button className="button button-primary" onClick={() => setRetryKey((value) => value + 1)}>Reintentar →</button><Link className="back-link" href="/app">Volver al resumen</Link></section></main>;
   if (!ready) return <main className="app-loading">Preparando tu asistente…</main>;
   return <main className="knowledge-page">
     <header className="knowledge-nav">
