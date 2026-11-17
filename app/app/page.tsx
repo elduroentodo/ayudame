@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase-browser";
+import { listBusinessIds, preferredBusinessId, rememberBusinessId } from "@/lib/workspace";
 
 type Business = { id: string; name: string; description: string | null; website: string | null; industry: string | null };
 type Agent = { id: string; name: string; status: string };
@@ -13,6 +14,9 @@ function safeSlug(value: string) {
 
 export default function AppPage() {
   const [business, setBusiness] = useState<Business | null>(null);
+  const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [userId, setUserId] = useState("");
+  const [creatingNew, setCreatingNew] = useState(false);
   const [agent, setAgent] = useState<Agent | null>(null);
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(true);
@@ -29,16 +33,33 @@ export default function AppPage() {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError) throw authError;
       if (!user) { window.location.replace("/login"); return; }
+      setUserId(user.id);
       setName(user.user_metadata.full_name || user.email?.split("@")[0] || "Hola");
-      const { data: membership, error: membershipError } = await supabase.from("business_members").select("business_id").eq("user_id", user.id).limit(1).maybeSingle();
-      if (membershipError) throw membershipError;
-      if (!membership?.business_id) { setBusiness(null); setAgent(null); return; }
-      const { data: currentBusiness, error: businessError } = await supabase.from("businesses").select("id, name, description, website, industry").eq("id", membership.business_id).maybeSingle();
-      if (businessError || !currentBusiness) throw businessError || new Error("Business not found");
-      const { data: currentAgent, error: agentError } = await supabase.from("agents").select("id, name, status").eq("business_id", currentBusiness.id).eq("kind", "knowledge").limit(1).maybeSingle();
+      const businessIds = await listBusinessIds(user.id);
+      if (!businessIds.length) {
+        setBusinesses([]);
+        setBusiness(null);
+        setAgent(null);
+        return;
+      }
+      const { data: available, error: businessError } = await supabase.from("businesses")
+        .select("id, name, description, website, industry").in("id", businessIds);
+      if (businessError || !available) throw businessError || new Error("Businesses not found");
+      const ordered: Business[] = businessIds.flatMap((id) => {
+        const item = available.find((row) => row.id === id);
+        return item ? [item as Business] : [];
+      });
+      if (!ordered.length) throw new Error("No accessible businesses");
+      const selectedId = preferredBusinessId(user.id, ordered.map((item) => item.id));
+      const currentBusiness = ordered.find((item) => item.id === selectedId) || ordered[0];
+      rememberBusinessId(user.id, currentBusiness.id);
+      const { data: currentAgent, error: agentError } = await supabase.from("agents")
+        .select("id, name, status").eq("business_id", currentBusiness.id).eq("kind", "knowledge").limit(1).maybeSingle();
       if (agentError) throw agentError;
+      setBusinesses(ordered);
       setBusiness(currentBusiness);
       setAgent(currentAgent);
+      setCreatingNew(false);
     } catch {
       setLoadError("No pudimos cargar tu espacio. Intenta de nuevo; tus datos no se han perdido.");
     } finally {
@@ -54,6 +75,8 @@ export default function AppPage() {
   async function createWorkspace(event: FormEvent) {
     event.preventDefault();
     if (!form.about.trim() && !firstPdf) { setMessage("Describe tu negocio o adjunta un PDF para empezar."); return; }
+    if (firstPdf && (firstPdf.type !== "application/pdf" || firstPdf.size > 10 * 1024 * 1024)) { setMessage("Usa un PDF de hasta 10 MB."); return; }
+    if (!userId) { setMessage("Tu sesión aún no está lista. Vuelve a intentarlo."); return; }
     setCreating(true); setMessage("");
     const { data: createdBusiness, error } = await supabase.rpc("create_business_for_current_user", {
       business_name: form.businessName,
@@ -68,13 +91,16 @@ export default function AppPage() {
     });
     if (error || !createdBusiness) { setMessage(error?.message || "No pudimos crear el espacio."); setCreating(false); return; }
     const newBusiness = createdBusiness as Business;
-    const { data: { user } } = await supabase.auth.getUser();
+    rememberBusinessId(userId, newBusiness.id);
+    setBusinesses((current) => [...current, newBusiness]);
+    setBusiness(newBusiness);
+    setAgent(null);
+    setCreatingNew(false);
     if (form.about.trim()) {
-      const { error: articleError } = await supabase.from("knowledge_articles").insert({ business_id: newBusiness.id, title: `Información inicial de ${newBusiness.name}`, body: form.about.trim(), status: "published", created_by: user?.id });
+      const { error: articleError } = await supabase.from("knowledge_articles").insert({ business_id: newBusiness.id, title: `Información inicial de ${newBusiness.name}`, body: form.about.trim(), status: "published", created_by: userId });
       if (articleError) { setMessage(`El espacio se creó, pero no pudimos guardar el artículo: ${articleError.message}. Puedes agregarlo en Conocimiento.`); setBusiness(newBusiness); setCreating(false); return; }
     }
     if (firstPdf) {
-      if (firstPdf.type !== "application/pdf" || firstPdf.size > 10 * 1024 * 1024) { setMessage("Usa un PDF de hasta 10 MB. El espacio ya está creado y puedes agregar artículos en Conocimiento."); setBusiness(newBusiness); setCreating(false); return; }
       const path = `${newBusiness.id}/${Date.now()}-${firstPdf.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
       const { error: uploadError } = await supabase.storage.from("knowledge-files").upload(path, firstPdf, { upsert: false });
       if (uploadError) { setMessage(`El espacio se creó, pero no pudimos subir el PDF: ${uploadError.message}`); setBusiness(newBusiness); setCreating(false); return; }
@@ -84,13 +110,20 @@ export default function AppPage() {
     setBusiness(newBusiness); setCreating(false);
   }
 
+  function changeWorkspace(id: string) {
+    if (!userId || !businesses.some((item) => item.id === id)) return;
+    rememberBusinessId(userId, id);
+    window.location.assign("/app");
+  }
+
   async function signOut() { await supabase.auth.signOut(); window.location.assign("/"); }
 
   if (loading) return <main className="app-loading">Preparando tu espacio…</main>;
   if (loadError) return <main className="auth-page"><section className="auth-card"><p className="eyebrow">Tu espacio</p><h1>No pudimos cargarlo</h1><p className="auth-copy">{loadError}</p><button className="button button-primary" onClick={loadWorkspace}>Reintentar →</button></section></main>;
 
-  if (!business) return <main className="onboarding-page"><form className="onboarding-card onboarding-form" onSubmit={createWorkspace}>
+  if (!business || creatingNew) return <main className="onboarding-page"><form className="onboarding-card onboarding-form" onSubmit={createWorkspace}>
     <Link className="brand" href="/"><span className="brand-mark">a</span><span>ayúdame</span></Link>
+    {business && <button className="back-link" type="button" onClick={() => { setCreatingNew(false); setMessage(""); }}>← Volver a {business.name}</button>}
     <p className="eyebrow">Crea tu espacio</p><h1>Cuéntanos sobre tu negocio.</h1><p>Esta información será privada y configura la base de tu primer agente.</p>
     <div className="form-grid"><label>Nombre del negocio<input name="businessName" value={form.businessName} onChange={updateForm} required placeholder="Ej. Clínica Aurora" /></label><label>Sector o industria<input name="industry" value={form.industry} onChange={updateForm} placeholder="Ej. Estética" /></label><label>Nombre del administrador<input name="administratorName" value={form.administratorName} onChange={updateForm} required placeholder="Tu nombre" /></label><label>Teléfono del administrador<input name="administratorPhone" value={form.administratorPhone} onChange={updateForm} required placeholder="+57…" /></label><label>Dirección del negocio<input name="businessAddress" value={form.businessAddress} onChange={updateForm} required placeholder="Calle, ciudad" /></label><label>Teléfono del negocio<input name="businessPhone" value={form.businessPhone} onChange={updateForm} required placeholder="+57…" /></label></div>
     <label>¿De qué se trata tu negocio?<textarea name="description" value={form.description} onChange={updateForm} required placeholder="Una reseña breve para configurar tu espacio." /></label>
@@ -99,5 +132,5 @@ export default function AppPage() {
     {message && <p className="auth-note">{message}</p>}<button className="button button-primary" disabled={creating}>{creating ? "Creando espacio…" : "Crear mi plataforma"} <span>→</span></button>
   </form></main>;
 
-  return <main className="dashboard"><div className="mobile-app-nav"><Link className="brand" href="/"><span className="brand-mark">a</span><span>ayúdame</span></Link><Link className="active" href="/app">Resumen</Link><Link href="/app/conocimiento">Conocimiento</Link><Link href="/app/probar">Probar</Link><button className="profile" onClick={signOut} title="Cerrar sesión">{name.slice(0, 2).toUpperCase()}</button></div><aside className="dash-sidebar"><Link className="brand dash-brand" href="/"><span className="brand-mark">a</span><span>ayúdame</span></Link><p className="workspace">ESPACIO DE TRABAJO</p><strong className="company">{business.name}<span>⌄</span></strong><nav><Link className="active" href="/app">▦ Resumen</Link><Link href="/app/conocimiento">✦ Conocimiento</Link><Link href="/app/probar">◌ Probar asistente</Link><Link href="/superadmin">⚙ Administración</Link><a href="#canales">◌ Canales</a></nav><div className="sidebar-help"><strong>Tu espacio está protegido</strong><p>Solo los miembros de {business.name} pueden ver este contenido.</p><Link href="/app/conocimiento">Agregar conocimiento →</Link></div></aside><section className="dash-content"><header><div><p className="eyebrow">Tu espacio de trabajo</p><h1>Hola, {name} <span>✦</span></h1></div><div className="user-card"><button className="profile" onClick={signOut} title="Cerrar sesión">{name.slice(0, 2).toUpperCase()}</button><span><strong>{name}</strong><small>Administrador · salir</small></span></div></header><div className="welcome"><div><span className="welcome-chip">{business.industry || "TU NEGOCIO"}</span><h2>{business.name} ya tiene su espacio privado.</h2><p>{business.description || "Empieza agregando conocimiento para tu asistente."}</p></div><div className="welcome-dots">✦<br />↗</div></div><section className="progress-panel"><div><p className="eyebrow">Puesta en marcha</p><h2>Tu primer agente está al 50%</h2></div><div className="progress-track"><span className="half" /></div><div className="progress-labels"><span>Cuenta creada</span><span>Conocimiento</span><span>Canal</span><span>Activo</span></div></section><section><div className="dash-section-head"><div><p className="eyebrow">Tu agente</p><h2>Equipo de IA</h2></div><Link className="soft-button" href="/app/conocimiento">Administrar contenido</Link></div><div className="dash-cards one-card"><article className="agent-card"><div className="agent-card-top"><span className="dash-icon lime">✦</span><span className="status-draft">{agent?.status === "active" ? "ACTIVO" : "BORRADOR"}</span></div><h3>{agent?.name || `Asistente de ${business.name}`}</h3><p>Respuestas basadas solo en el conocimiento validado de tu negocio.</p><div className="agent-meta"><span>Conocimiento privado</span><span>WhatsApp pendiente</span></div><Link href="/app/conocimiento">Agregar fuentes →</Link></article></div></section><section className="next-steps"><p className="eyebrow">Siguiente paso recomendado</p><h2>Entrena tu asistente</h2><p>Agrega procedimientos, catálogo, preguntas frecuentes y documentos aprobados para que las respuestas sean confiables.</p><div className="setup-actions"><Link href="/app/conocimiento" className="button button-primary">Agregar conocimiento <span>→</span></Link></div></section></section></main>;
+  return <main className="dashboard"><div className="mobile-app-nav"><Link className="brand" href="/"><span className="brand-mark">a</span><span>ayúdame</span></Link><Link className="active" href="/app">Resumen</Link><Link href="/app/conocimiento">Conocimiento</Link><Link href="/app/probar">Probar</Link><button className="profile" onClick={signOut} title="Cerrar sesión">{name.slice(0, 2).toUpperCase()}</button></div><aside className="dash-sidebar"><Link className="brand dash-brand" href="/"><span className="brand-mark">a</span><span>ayúdame</span></Link><p className="workspace">ESPACIO DE TRABAJO</p><strong className="company">{business.name}</strong><nav><Link className="active" href="/app">▦ Resumen</Link><Link href="/app/conocimiento">✦ Conocimiento</Link><Link href="/app/probar">◌ Probar asistente</Link><Link href="/superadmin">⚙ Administración</Link><a href="#canales">◌ Canales</a></nav><div className="sidebar-help"><strong>Tu espacio está protegido</strong><p>Solo los miembros de {business.name} pueden ver este contenido.</p><Link href="/app/conocimiento">Agregar conocimiento →</Link></div></aside><section className="dash-content"><header><div><p className="eyebrow">Tu espacio de trabajo</p><h1>Hola, {name} <span>✦</span></h1><div className="workspace-controls"><label>Negocio activo<select aria-label="Negocio activo" value={business.id} onChange={(event) => changeWorkspace(event.target.value)}>{businesses.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><button type="button" className="soft-button" onClick={() => { setCreatingNew(true); setMessage(""); }}>+ Nuevo espacio</button></div></div><div className="user-card"><button className="profile" onClick={signOut} title="Cerrar sesión">{name.slice(0, 2).toUpperCase()}</button><span><strong>{name}</strong><small>Administrador · salir</small></span></div></header>{message && <p className="auth-note">{message}</p>}<div className="welcome"><div><span className="welcome-chip">{business.industry || "TU NEGOCIO"}</span><h2>{business.name} ya tiene su espacio privado.</h2><p>{business.description || "Empieza agregando conocimiento para tu asistente."}</p></div><div className="welcome-dots">✦<br />↗</div></div><section className="progress-panel"><div><p className="eyebrow">Puesta en marcha</p><h2>Tu primer agente está al 50%</h2></div><div className="progress-track"><span className="half" /></div><div className="progress-labels"><span>Cuenta creada</span><span>Conocimiento</span><span>Canal</span><span>Activo</span></div></section><section><div className="dash-section-head"><div><p className="eyebrow">Tu agente</p><h2>Equipo de IA</h2></div><Link className="soft-button" href="/app/conocimiento">Administrar contenido</Link></div><div className="dash-cards one-card"><article className="agent-card"><div className="agent-card-top"><span className="dash-icon lime">✦</span><span className="status-draft">{agent?.status === "active" ? "ACTIVO" : "BORRADOR"}</span></div><h3>{agent?.name || `Asistente de ${business.name}`}</h3><p>Respuestas basadas solo en el conocimiento validado de tu negocio.</p><div className="agent-meta"><span>Conocimiento privado</span><span>WhatsApp pendiente</span></div><Link href="/app/conocimiento">Agregar fuentes →</Link></article></div></section><section className="next-steps"><p className="eyebrow">Siguiente paso recomendado</p><h2>Entrena tu asistente</h2><p>Agrega procedimientos, catálogo, preguntas frecuentes y documentos aprobados para que las respuestas sean confiables.</p><div className="setup-actions"><Link href="/app/conocimiento" className="button button-primary">Agregar conocimiento <span>→</span></Link></div></section></section></main>;
 }
