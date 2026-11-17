@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase-browser";
+import { listBusinessIds, preferredBusinessId } from "@/lib/workspace";
 
 type Business = { id: string; name: string };
 type Article = { id: string; title: string; status: string; created_at: string };
@@ -27,10 +28,10 @@ export default function KnowledgePage() {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError) throw authError;
       if (!user) { window.location.replace("/login"); return; }
-      const { data: membership, error: membershipError } = await supabase.from("business_members").select("business_id").eq("user_id", user.id).limit(1).maybeSingle();
-      if (membershipError) throw membershipError;
-      if (!membership?.business_id) { window.location.replace("/app"); return; }
-      const { data: currentBusiness, error: businessError } = await supabase.from("businesses").select("id, name").eq("id", membership.business_id).maybeSingle();
+      const businessIds = await listBusinessIds(user.id);
+      const businessId = preferredBusinessId(user.id, businessIds);
+      if (!businessId) { window.location.replace("/app"); return; }
+      const { data: currentBusiness, error: businessError } = await supabase.from("businesses").select("id, name").eq("id", businessId).maybeSingle();
       if (businessError || !currentBusiness) throw businessError || new Error("Business not found");
       const [articleResult, documentResult, sourceResult] = await Promise.all([
         supabase.from("knowledge_articles").select("id, title, status, created_at").eq("business_id", currentBusiness.id).order("created_at", { ascending: false }),
