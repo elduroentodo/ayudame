@@ -34,13 +34,13 @@ function relevantContext(question: string, articles: Article[]) {
 async function answerWithCloudflare(userPrompt: string) {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const apiToken = process.env.CLOUDFLARE_AI_TOKEN;
-  const model = process.env.CLOUDFLARE_AI_MODEL || "@cf/meta/llama-3.2-3b-instruct";
+  const model = process.env.CLOUDFLARE_AI_MODEL || "@cf/zai-org/glm-4.7-flash";
   if (!accountId || !apiToken) throw new Error("missing_cloudflare_config");
 
-  const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${encodeURIComponent(model)}`, {
+  const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${encodeURI(model)}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ messages: [{ role: "system", content: instructions }, { role: "user", content: userPrompt }] }),
+    body: JSON.stringify({ messages: [{ role: "system", content: instructions }, { role: "user", content: userPrompt }], max_completion_tokens: 350 }),
     signal: AbortSignal.timeout(45000),
   });
   const data = await response.json().catch(() => ({})) as { success?: boolean; errors?: { message?: string }[]; result?: { response?: string } };
