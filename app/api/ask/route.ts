@@ -43,9 +43,11 @@ async function answerWithCloudflare(userPrompt: string) {
     body: JSON.stringify({ messages: [{ role: "system", content: instructions }, { role: "user", content: userPrompt }], max_completion_tokens: 350 }),
     signal: AbortSignal.timeout(45000),
   });
-  const data = await response.json().catch(() => ({})) as { success?: boolean; errors?: { message?: string }[]; result?: { response?: string } };
+  const data = await response.json().catch(() => ({})) as { success?: boolean; errors?: { message?: string }[]; result?: { response?: string; choices?: { message?: { content?: string } }[] } };
   if (!response.ok || !data.success) throw new Error(data.errors?.[0]?.message || "cloudflare_error");
-  return data.result?.response || "";
+  const answer = data.result?.response || data.result?.choices?.[0]?.message?.content;
+  if (!answer) throw new Error("cloudflare_empty_response");
+  return answer;
 }
 
 async function answerWithOllama(userPrompt: string) {
@@ -77,13 +79,16 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const question = typeof body.question === "string" ? body.question.trim() : "";
   if (!question || question.length > 1200) return NextResponse.json({ error: "Escribe una pregunta de hasta 1.200 caracteres." }, { status: 400 });
+  const businessId = typeof body.businessId === "string" ? body.businessId : "";
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(businessId)) return NextResponse.json({ error: "Selecciona un negocio válido." }, { status: 400 });
 
-  const { data: membership } = await supabase.from("business_members").select("business_id").eq("user_id", userData.user.id).limit(1).maybeSingle();
-  if (!membership?.business_id) return NextResponse.json({ error: "No encontramos un espacio para tu cuenta." }, { status: 403 });
+  const { data: membership, error: membershipError } = await supabase.from("business_members").select("business_id").eq("user_id", userData.user.id).eq("business_id", businessId).maybeSingle();
+  if (membershipError) return NextResponse.json({ error: "No pudimos verificar tu acceso al negocio." }, { status: 503 });
+  if (!membership) return NextResponse.json({ error: "No tienes acceso a este negocio." }, { status: 403 });
 
   const [{ data: business, error: businessError }, { data: articles, error: articlesError }] = await Promise.all([
-    supabase.from("businesses").select("name").eq("id", membership.business_id).maybeSingle(),
-    supabase.from("knowledge_articles").select("title, body").eq("business_id", membership.business_id).eq("status", "published").order("created_at", { ascending: false }).limit(100),
+    supabase.from("businesses").select("name").eq("id", businessId).maybeSingle(),
+    supabase.from("knowledge_articles").select("title, body").eq("business_id", businessId).eq("status", "published").order("created_at", { ascending: false }).limit(100),
   ]);
   if (businessError || articlesError || !business) return NextResponse.json({ error: "No pudimos consultar el conocimiento de tu negocio." }, { status: 503 });
   const context = relevantContext(question, (articles || []) as Article[]);
