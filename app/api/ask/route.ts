@@ -3,6 +3,34 @@ import { createClient } from "@supabase/supabase-js";
 
 const instructions = "Eres el asistente de un negocio de Latinoamérica. Responde en español claro, breve y cercano, usando exclusivamente el conocimiento proporcionado. Adapta el lenguaje al país del negocio sin estereotipos. Si no aparece la respuesta, dilo y ofrece escalar al equipo humano. No inventes precios, horarios, políticas ni disponibilidad. No des diagnósticos, contraindicaciones o indicaciones médicas personalizadas; ante asuntos clínicos o de seguridad, pide contactar al profesional responsable.";
 
+type Article = { title: string; body: string };
+
+function terms(value: string) {
+  const stop = new Set(["para", "como", "donde", "cuando", "cuanto", "cual", "que", "con", "del", "las", "los", "una", "uno", "por", "hay", "tienen", "puedo", "quiero"]);
+  return [...new Set(value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").match(/[a-z0-9]{3,}/g) || [])]
+    .filter((term) => !stop.has(term));
+}
+
+function relevantContext(question: string, articles: Article[]) {
+  const query = terms(question);
+  const ranked = articles.map((article, index) => {
+    const title = article.title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const body = article.body.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const score = query.reduce((total, term) => total + (title.includes(term) ? 4 : 0) + (body.includes(term) ? 1 : 0), 0);
+    return { article, score, index };
+  }).sort((a, b) => b.score - a.score || a.index - b.index);
+  let remaining = 10000;
+  const selected: string[] = [];
+  for (const { article } of ranked.slice(0, 6)) {
+    const item = `${article.title}\n${article.body}`.slice(0, Math.min(3500, remaining));
+    if (!item.trim()) continue;
+    selected.push(item);
+    remaining -= item.length;
+    if (remaining < 200) break;
+  }
+  return selected.join("\n\n---\n\n");
+}
+
 async function answerWithCloudflare(userPrompt: string) {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const apiToken = process.env.CLOUDFLARE_AI_TOKEN;
@@ -53,11 +81,12 @@ export async function POST(request: Request) {
   const { data: membership } = await supabase.from("business_members").select("business_id").eq("user_id", userData.user.id).limit(1).maybeSingle();
   if (!membership?.business_id) return NextResponse.json({ error: "No encontramos un espacio para tu cuenta." }, { status: 403 });
 
-  const [{ data: business }, { data: articles }] = await Promise.all([
+  const [{ data: business, error: businessError }, { data: articles, error: articlesError }] = await Promise.all([
     supabase.from("businesses").select("name").eq("id", membership.business_id).maybeSingle(),
-    supabase.from("knowledge_articles").select("title, body").eq("business_id", membership.business_id).eq("status", "published").limit(12),
+    supabase.from("knowledge_articles").select("title, body").eq("business_id", membership.business_id).eq("status", "published").order("created_at", { ascending: false }).limit(100),
   ]);
-  const context = (articles || []).map((article) => `${article.title}\n${article.body}`).join("\n\n---\n\n").slice(0, 24000);
+  if (businessError || articlesError || !business) return NextResponse.json({ error: "No pudimos consultar el conocimiento de tu negocio." }, { status: 503 });
+  const context = relevantContext(question, (articles || []) as Article[]);
   if (!context) return NextResponse.json({ answer: "Aún no tengo información aprobada para responder. Te recomiendo contactar directamente al negocio." });
 
   const prompt = `Negocio: ${business?.name || "Tu negocio"}\n\nConocimiento aprobado:\n${context}\n\nPregunta del cliente: ${question}`;
