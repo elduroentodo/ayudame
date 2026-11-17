@@ -18,25 +18,33 @@ export default function AppPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [message, setMessage] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState({ businessName: "", administratorName: "", administratorPhone: "", businessAddress: "", businessPhone: "", industry: "", description: "", website: "", about: "" });
   const [firstPdf, setFirstPdf] = useState<File | null>(null);
 
   async function loadWorkspace() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { window.location.replace("/login"); return; }
-    setName(user.user_metadata.full_name || user.email?.split("@")[0] || "Hola");
-    const { data: membership } = await supabase.from("business_members").select("business_id").eq("user_id", user.id).limit(1).maybeSingle();
-    if (membership?.business_id) {
-      const { data: currentBusiness } = await supabase.from("businesses").select("id, name, description, website, industry").eq("id", membership.business_id).maybeSingle();
-      if (currentBusiness) {
-        setBusiness(currentBusiness);
-        const { data: currentAgent } = await supabase.from("agents").select("id, name, status").eq("business_id", currentBusiness.id).eq("kind", "knowledge").limit(1).maybeSingle();
-        setAgent(currentAgent);
-      }
+    setLoading(true);
+    setLoadError("");
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!user) { window.location.replace("/login"); return; }
+      setName(user.user_metadata.full_name || user.email?.split("@")[0] || "Hola");
+      const { data: membership, error: membershipError } = await supabase.from("business_members").select("business_id").eq("user_id", user.id).limit(1).maybeSingle();
+      if (membershipError) throw membershipError;
+      if (!membership?.business_id) { setBusiness(null); setAgent(null); return; }
+      const { data: currentBusiness, error: businessError } = await supabase.from("businesses").select("id, name, description, website, industry").eq("id", membership.business_id).maybeSingle();
+      if (businessError || !currentBusiness) throw businessError || new Error("Business not found");
+      const { data: currentAgent, error: agentError } = await supabase.from("agents").select("id, name, status").eq("business_id", currentBusiness.id).eq("kind", "knowledge").limit(1).maybeSingle();
+      if (agentError) throw agentError;
+      setBusiness(currentBusiness);
+      setAgent(currentAgent);
+    } catch {
+      setLoadError("No pudimos cargar tu espacio. Intenta de nuevo; tus datos no se han perdido.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
-
   useEffect(() => { loadWorkspace(); }, []);
 
   function updateForm(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
@@ -79,6 +87,7 @@ export default function AppPage() {
   async function signOut() { await supabase.auth.signOut(); window.location.assign("/"); }
 
   if (loading) return <main className="app-loading">Preparando tu espacio…</main>;
+  if (loadError) return <main className="auth-page"><section className="auth-card"><p className="eyebrow">Tu espacio</p><h1>No pudimos cargarlo</h1><p className="auth-copy">{loadError}</p><button className="button button-primary" onClick={loadWorkspace}>Reintentar →</button></section></main>;
 
   if (!business) return <main className="onboarding-page"><form className="onboarding-card onboarding-form" onSubmit={createWorkspace}>
     <Link className="brand" href="/"><span className="brand-mark">a</span><span>ayúdame</span></Link>
