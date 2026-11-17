@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase-browser";
+import { listBusinessIds, preferredBusinessId } from "@/lib/workspace";
 
 export default function Probar() {
   const [articleCount, setArticleCount] = useState(0);
+  const [businessId, setBusinessId] = useState("");
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
@@ -22,15 +24,15 @@ export default function Probar() {
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         if (authError) throw authError;
         if (!user) { window.location.replace("/login"); return; }
-        const { data: membership, error: membershipError } = await supabase.from("business_members")
-          .select("business_id").eq("user_id", user.id).limit(1).maybeSingle();
-        if (membershipError) throw membershipError;
-        if (!membership?.business_id) { window.location.replace("/app"); return; }
+        const businessIds = await listBusinessIds(user.id);
+        const selectedId = preferredBusinessId(user.id, businessIds);
+        if (!selectedId) { window.location.replace("/app"); return; }
         const { count, error } = await supabase.from("knowledge_articles")
           .select("id", { count: "exact", head: true })
-          .eq("business_id", membership.business_id).eq("status", "published");
+          .eq("business_id", selectedId).eq("status", "published");
         if (error) throw error;
         if (!mounted) return;
+        setBusinessId(selectedId);
         setArticleCount(count || 0);
         setReady(true);
       } catch {
@@ -42,7 +44,7 @@ export default function Probar() {
 
   async function ask(event: FormEvent) {
     event.preventDefault();
-    if (!ready || busy) return;
+    if (!ready || busy || !businessId) return;
     setBusy(true);
     setAnswer("");
     try {
@@ -51,7 +53,7 @@ export default function Probar() {
       const response = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, businessId }),
       });
       const data = await response.json();
       setAnswer(data.answer || data.error || "No fue posible responder.");
