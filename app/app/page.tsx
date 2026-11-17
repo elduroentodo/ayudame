@@ -63,14 +63,15 @@ export default function AppPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (form.about.trim()) {
       const { error: articleError } = await supabase.from("knowledge_articles").insert({ business_id: newBusiness.id, title: `Información inicial de ${newBusiness.name}`, body: form.about.trim(), status: "published", created_by: user?.id });
-      if (articleError) { setMessage(articleError.message); setCreating(false); return; }
+      if (articleError) { setMessage(`El espacio se creó, pero no pudimos guardar el artículo: ${articleError.message}. Puedes agregarlo en Conocimiento.`); setBusiness(newBusiness); setCreating(false); return; }
     }
     if (firstPdf) {
+      if (firstPdf.type !== "application/pdf" || firstPdf.size > 10 * 1024 * 1024) { setMessage("Usa un PDF de hasta 10 MB. El espacio ya está creado y puedes agregar artículos en Conocimiento."); setBusiness(newBusiness); setCreating(false); return; }
       const path = `${newBusiness.id}/${Date.now()}-${firstPdf.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
       const { error: uploadError } = await supabase.storage.from("knowledge-files").upload(path, firstPdf, { upsert: false });
       if (uploadError) { setMessage(`El espacio se creó, pero no pudimos subir el PDF: ${uploadError.message}`); setBusiness(newBusiness); setCreating(false); return; }
-      const { error: documentError } = await supabase.from("knowledge_documents").insert({ business_id: newBusiness.id, file_name: firstPdf.name, storage_path: path, mime_type: firstPdf.type || "application/pdf", size_bytes: firstPdf.size, status: "ready" });
-      if (documentError) { setMessage(documentError.message); setBusiness(newBusiness); setCreating(false); return; }
+      const { error: documentError } = await supabase.from("knowledge_documents").insert({ business_id: newBusiness.id, file_name: firstPdf.name, storage_path: path, mime_type: firstPdf.type || "application/pdf", size_bytes: firstPdf.size, status: "pending" });
+      if (documentError) { setMessage(`El espacio se creó, pero no pudimos registrar el PDF: ${documentError.message}. Puedes continuar con artículos en Conocimiento.`); setBusiness(newBusiness); setCreating(false); return; }
     }
     setBusiness(newBusiness); setCreating(false);
   }
