@@ -18,9 +18,10 @@ export default function ChannelsPage() {
     setLoading(true);
     setError("");
     try {
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (!currentSession) { window.location.replace("/login"); return; }
       const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError) throw authError;
-      if (!user) { window.location.replace("/login"); return; }
+      if (authError || !user) throw authError || new Error("session_invalid");
       const businessId = preferredBusinessId(user.id, await listBusinessIds(user.id));
       if (!businessId) { window.location.replace("/app"); return; }
       const { data: currentBusiness, error: businessError } = await supabase.from("businesses")
