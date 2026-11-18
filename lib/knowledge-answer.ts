@@ -4,28 +4,28 @@ const instructions = "Eres el asistente de un negocio de Latinoamérica. Respond
 
 function terms(value: string) {
   const stop = new Set(["para", "como", "donde", "cuando", "cuanto", "cual", "que", "con", "del", "las", "los", "una", "uno", "por", "hay", "tienen", "puedo", "quiero"]);
-  return [...new Set(value.toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").match(/[a-z0-9]{3,}/g) || [])]
+  return [...new Set(value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").match(/[a-z0-9]{3,}/g) || [])]
     .filter((term) => !stop.has(term));
 }
 
 function relevantContext(question: string, articles: KnowledgeArticle[]) {
   const query = terms(question);
   const ranked = articles.map((article, index) => {
-    const title = article.title.toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "");
-    const body = article.body.toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "");
+    const title = article.title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const body = article.body.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     const score = query.reduce((total, term) => total + (title.includes(term) ? 4 : 0) + (body.includes(term) ? 1 : 0), 0);
     return { article, score, index };
   }).sort((a, b) => b.score - a.score || a.index - b.index);
   let remaining = 10000;
   const selected: string[] = [];
   for (const { article } of ranked.slice(0, 6)) {
-    const item = `${article.title}\\n${article.body}`.slice(0, Math.min(3500, remaining));
+    const item = `${article.title}\n${article.body}`.slice(0, Math.min(3500, remaining));
     if (!item.trim()) continue;
     selected.push(item);
     remaining -= item.length;
     if (remaining < 200) break;
   }
-  return selected.join("\\n\\n---\\n\\n");
+  return selected.join("\n\n---\n\n");
 }
 
 async function answerWithCloudflare(userPrompt: string) {
@@ -47,7 +47,7 @@ async function answerWithCloudflare(userPrompt: string) {
 }
 
 async function answerWithOllama(userPrompt: string) {
-  const baseUrl = (process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434").replace(/\\/$/, "");
+  const baseUrl = (process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434").replace(/\/$/, "");
   const model = process.env.OLLAMA_MODEL || "qwen2.5:7b";
   const response = await fetch(`${baseUrl}/api/chat`, {
     method: "POST",
@@ -64,6 +64,6 @@ async function answerWithOllama(userPrompt: string) {
 export async function generateKnowledgeReply(question: string, businessName: string, articles: KnowledgeArticle[]) {
   const context = relevantContext(question, articles);
   if (!context) return "Aún no tengo información aprobada para responder. Te recomiendo contactar directamente al negocio.";
-  const prompt = `Negocio: ${businessName}\\n\\nConocimiento aprobado:\\n${context}\\n\\nPregunta del cliente: ${question}`;
+  const prompt = `Negocio: ${businessName}\n\nConocimiento aprobado:\n${context}\n\nPregunta del cliente: ${question}`;
   return process.env.AI_PROVIDER === "ollama" ? answerWithOllama(prompt) : answerWithCloudflare(prompt);
 }
