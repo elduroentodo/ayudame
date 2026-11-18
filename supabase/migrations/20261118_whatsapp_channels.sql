@@ -1,5 +1,5 @@
 -- WhatsApp Cloud API pilot: routing is provisioned by an operator after number ownership is verified.
--- These tables are not exposed through the Supabase Data API; only server-side service role code uses them.
+-- Only server-side service_role code may access these tables through the Supabase Data API.
 create table if not exists public.whatsapp_channels (
   id uuid primary key default gen_random_uuid(),
   business_id uuid not null unique references public.businesses(id) on delete cascade,
@@ -31,3 +31,6 @@ alter table public.whatsapp_webhook_events enable row level security;
 -- connected phone numbers or inbound message IDs. Server access requires the secret key.
 revoke all on public.whatsapp_channels from anon, authenticated;
 revoke all on public.whatsapp_webhook_events from anon, authenticated;
+
+grant select on public.whatsapp_channels to service_role;
+grant select, insert, update on public.whatsapp_webhook_events to service_role;
