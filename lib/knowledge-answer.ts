@@ -37,7 +37,7 @@ async function answerWithCloudflare(userPrompt: string) {
     method: "POST",
     headers: { Authorization: `Bearer ${apiToken}`, "Content-Type": "application/json" },
     body: JSON.stringify({ messages: [{ role: "system", content: instructions }, { role: "user", content: userPrompt }], max_completion_tokens: 350 }),
-    signal: AbortSignal.timeout(45000),
+    signal: AbortSignal.timeout(30000),
   });
   const data = await response.json().catch(() => ({})) as { success?: boolean; errors?: { message?: string }[]; result?: { response?: string; choices?: { message?: { content?: string } }[] } };
   if (!response.ok || !data.success) throw new Error(data.errors?.[0]?.message || "cloudflare_error");
@@ -53,7 +53,7 @@ async function answerWithOllama(userPrompt: string) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model, stream: false, messages: [{ role: "system", content: instructions }, { role: "user", content: userPrompt }] }),
-    signal: AbortSignal.timeout(45000),
+    signal: AbortSignal.timeout(30000),
   });
   if (!response.ok) throw new Error("ollama_error");
   const data = await response.json() as { message?: { content?: string } };
