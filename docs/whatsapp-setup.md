@@ -10,7 +10,7 @@ El canal usa la API oficial de Meta. Cada mensaje entrante se enruta por `phone_
 - Se valida `X-Hub-Signature-256` antes de leer eventos.
 - Solo se procesan textos entrantes del campo `messages`; se ignoran estados y contenido multimedia.
 - La tabla de eventos guarda IDs y estados, no el texto ni el teléfono del cliente.
-- El mismo `wa_message_id` no genera dos respuestas.
+- El mismo `wa_message_id` no genera dos respuestas mientras el envío quede registrado como `sent`; errores transitorios devuelven 503 para que Meta reintente.
 
 ## Preparación de Meta
 
@@ -23,6 +23,6 @@ El canal usa la API oficial de Meta. Cada mensaje entrante se enruta por `phone_
 
 ## Límites del piloto
 
-La vinculación es manual; todavía no implementa Embedded Signup ni un token individual por negocio. El token de servidor debe tener acceso únicamente a las cuentas de WhatsApp que se vayan a utilizar. El modelo responde solo mensajes de texto iniciados por el cliente; no envía campañas ni plantillas, y no procesa PDFs o enlaces hasta que exista extracción de contenido. Si falla el envío a Meta, el evento queda marcado como `failed` para revisión manual. El trabajo posterior al acuse del webhook depende de la duración máxima de la función de Vercel; antes de escalar a alto volumen se requiere una cola durable y reintentos.
+La vinculación es manual; todavía no implementa Embedded Signup ni un token individual por negocio. El token de servidor debe tener acceso únicamente a las cuentas de WhatsApp que se vayan a utilizar. El modelo responde solo mensajes de texto iniciados por el cliente; no envía campañas ni plantillas, y no procesa PDFs o enlaces hasta que exista extracción de contenido. Si falla el envío a Meta, el evento queda marcado como `failed` y el webhook devuelve 503 para que Meta pueda reintentar. El procesamiento ocurre antes del acuse para evitar perder entregas. Aun así, una caída justo después de que Meta acepte el envío y antes de registrar `sent` podría producir una respuesta duplicada; antes de activar números reales o escalar se requiere una cola durable, observabilidad y reconciliación.
 
 Revisar las [tarifas vigentes de Meta](https://business.whatsapp.com/products/platform-pricing) para el país y categoría antes de activar números reales.
