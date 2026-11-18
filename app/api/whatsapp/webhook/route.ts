@@ -1,5 +1,4 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { generateKnowledgeReply, type KnowledgeArticle } from "@/lib/knowledge-answer";
 
@@ -51,7 +50,7 @@ async function sendText(phoneNumberId: string, to: string, body: string, replyTo
       context: { message_id: replyToId },
       text: { preview_url: false, body: body.slice(0, 4000) },
     }),
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(10000),
   });
   const result = await response.json().catch(() => ({})) as { messages?: { id?: string }[] };
   if (!response.ok || !result.messages?.[0]?.id) throw new Error("whatsapp_send_failed");
@@ -68,8 +67,24 @@ async function handleText(phoneNumberId: string, message: IncomingText) {
   const { error: claimError } = await db.from("whatsapp_webhook_events").insert({
     wa_message_id: message.id, channel_id: channel.id, business_id: channel.business_id, status: "processing",
   });
-  if (claimError?.code === "23505") return;
-  if (claimError) throw new Error("event_claim_failed");
+  if (claimError?.code === "23505") {
+    const { data: existing, error: lookupError } = await db.from("whatsapp_webhook_events")
+      .select("status, updated_at").eq("wa_message_id", message.id).single();
+    if (lookupError || !existing) throw new Error("event_lookup_failed");
+    if (existing.status === "sent") return;
+    if (existing.status === "processing" && Date.now() - Date.parse(existing.updated_at) < 55_000) {
+      throw new Error("event_already_processing");
+    }
+    const { data: retry, error: retryError } = await db.from("whatsapp_webhook_events")
+      .update({ status: "processing", error_code: null, updated_at: new Date().toISOString() })
+      .eq("wa_message_id", message.id)
+      .eq("status", existing.status)
+      .eq("updated_at", existing.updated_at)
+      .select("wa_message_id").maybeSingle();
+    if (retryError || !retry) throw new Error("event_already_processing");
+  } else if (claimError) {
+    throw new Error("event_claim_failed");
+  }
 
   try {
     const [{ data: business, error: businessError }, { data: articles, error: articlesError }] = await Promise.all([
@@ -104,7 +119,7 @@ async function handleText(phoneNumberId: string, message: IncomingText) {
 
 export async function POST(request: Request) {
   const secret = process.env.META_APP_SECRET;
-  if (!secret || !process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.WHATSAPP_ACCESS_TOKEN) {
+  if (!secret || !process.env.WHATSAPP_VERIFY_TOKEN || !process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.WHATSAPP_ACCESS_TOKEN) {
     return new Response("Webhook not configured", { status: 503 });
   }
   const raw = await request.text();
@@ -132,10 +147,11 @@ export async function POST(request: Request) {
     }
   }
   if (incoming.length) {
-    after(async () => {
-      const outcomes = await Promise.allSettled(incoming.map(({ phoneNumberId, message }) => handleText(phoneNumberId, message)));
-      if (outcomes.some((result) => result.status === "rejected")) console.error("WhatsApp webhook processing failed");
-    });
+    const outcomes = await Promise.allSettled(incoming.map(({ phoneNumberId, message }) => handleText(phoneNumberId, message)));
+    if (outcomes.some((result) => result.status === "rejected")) {
+      console.error("WhatsApp webhook processing failed");
+      return new Response("Processing failed; retry delivery", { status: 503 });
+    }
   }
   return Response.json({ received: true });
 }
